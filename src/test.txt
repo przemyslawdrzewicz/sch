@@ -1,0 +1,155 @@
+{
+  "user": {
+    "type": "", // register, unregister, ''
+    "insuranceType": null,
+  },
+  "friends": [
+    {
+      "type": "", // register, unregister, edit, ''
+      "address": {
+        "street": "",
+        "country": null
+      },
+      "personal": {
+        "firstName": "",
+        "lastName": ""
+      },
+      "insurance": {
+        "startDate": "",
+        "endDate": "",
+        "insuranceType": null
+      }
+    }
+  ]
+}
+
+mod
+
+public class User
+{
+    public int Id { get; set; }
+    public string InsuranceType { get; set; }
+    public string Type { get; set; } // "register", "unregister", ""
+}
+
+public class Friend
+{
+    public int Id { get; set; }
+    public string Type { get; set; } // "register", "edit", "unregister", ""
+
+    public Personal Personal { get; set; }
+    public Address Address { get; set; }
+    public Insurance Insurance { get; set; }
+}
+
+public class Personal
+{
+    public string FirstName { get; set; }
+    public string LastName { get; set; }
+}
+
+public class Address
+{
+    public string Street { get; set; }
+    public string Country { get; set; }
+}
+
+public class Insurance
+{
+    public string StartDate { get; set; }
+    public string EndDate { get; set; }
+    public string InsuranceType { get; set; }
+}
+
+
+dto
+
+
+public class InsuranceRequest
+{
+    public UserAction User { get; set; }
+    public List<FriendAction> Friends { get; set; }
+}
+
+public class UserAction
+{
+    public string Type { get; set; } // "register", "unregister", ""
+    public string InsuranceType { get; set; }
+}
+
+public class FriendAction
+{
+    public string Type { get; set; } // "register", "edit", "unregister", ""
+    public Personal Personal { get; set; }
+    public Address Address { get; set; }
+    public Insurance Insurance { get; set; }
+}
+
+
+controller
+
+[HttpPost("submit-insurance")]
+public async Task<IActionResult> SubmitInsurance([FromBody] InsuranceRequest request)
+{
+    var existingUser = await _dbContext.Users.FirstOrDefaultAsync();
+    var existingFriends = await _dbContext.Friends.ToListAsync();
+
+    // --- Handle User ---
+    if (existingUser == null && request.User.Type == "register")
+    {
+        _dbContext.Users.Add(new User
+        {
+            InsuranceType = request.User.InsuranceType,
+            Type = "register"
+        });
+    }
+    else if (existingUser != null && existingUser.Type != request.User.Type)
+    {
+        switch (request.User.Type)
+        {
+            case "register":
+                existingUser.InsuranceType = request.User.InsuranceType;
+                existingUser.Type = "register";
+                break;
+            case "unregister":
+                _dbContext.Users.Remove(existingUser);
+                _dbContext.Friends.RemoveRange(existingFriends); // remove all friends too
+                break;
+        }
+    }
+
+    // --- Handle Friends ---
+    foreach (var friend in request.Friends)
+    {
+        var matched = existingFriends.FirstOrDefault(f =>
+            f.Personal.FirstName == friend.Personal.FirstName &&
+            f.Personal.LastName == friend.Personal.LastName);
+
+        if (matched == null && friend.Type == "register")
+        {
+            _dbContext.Friends.Add(MapFriend(friend));
+        }
+        else if (matched != null && matched.Type != friend.Type)
+        {
+            switch (friend.Type)
+            {
+                case "register":
+                    UpdateFriend(matched, friend);
+                    matched.Type = "register";
+                    break;
+
+                case "edit":
+                    UpdateFriend(matched, friend);
+                    matched.Type = "edit";
+                    break;
+
+                case "unregister":
+                    _dbContext.Friends.Remove(matched);
+                    break;
+            }
+        }
+    }
+
+    await _dbContext.SaveChangesAsync();
+    return Ok("Request processed successfully.");
+}
